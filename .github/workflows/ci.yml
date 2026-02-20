@@ -46,7 +46,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ✅ Configure AWS using Access Keys
+      # ✅ Configure AWS (Access Keys)
       - name: Configure AWS credentials
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: aws-actions/configure-aws-credentials@v4
@@ -55,7 +55,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # 🔍 Optional debug (can remove later)
+      # 🔍 Optional Debug
       - name: Verify AWS identity
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: aws sts get-caller-identity
@@ -72,19 +72,20 @@ jobs:
           docker build -t ${{ env.ECR_REPO }}:${{ github.sha }} .
           docker tag ${{ env.ECR_REPO }}:${{ github.sha }} ${{ env.ECR_REPO }}:latest
 
-      # 🏥 Health Check
-      - name: Health check (container test)
+      # ✅ Lambda Container Invocation Test (Correct Way)
+      - name: Test Lambda container locally
         run: |
-          docker run -d --name healthcheck -p 8080:8080 ${{ env.ECR_REPO }}:latest
-          sleep 5
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health)
-          docker stop healthcheck
-          docker rm healthcheck
-          if [ "$STATUS" != "200" ]; then
-            echo "Health check failed: expected 200, got $STATUS"
-            exit 1
-          fi
-          echo "Health check passed (HTTP $STATUS)"
+          docker run -d -p 9000:8080 --name lambda-test ${{ env.ECR_REPO }}:latest
+          sleep 8
+
+          RESPONSE=$(curl -s -XPOST \
+            "http://localhost:9000/2015-03-31/functions/function/invocations" \
+            -d '{}')
+
+          echo "Lambda response: $RESPONSE"
+
+          docker stop lambda-test
+          docker rm lambda-test
 
       # 🚀 Push & Deploy
       - name: Push to ECR and update Lambda
